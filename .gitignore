@@ -1,0 +1,8 @@
+# Ignore config files
+wf1.txt
+
+# Ignore folders
+__pycache__
+material
+output
+img
