@@ -19,59 +19,87 @@ def load_text_file(path):
     return file_path.read_text(encoding="utf-8")
 
 layer = []
+steps = 0
+show_steps = True
 
 img_path = "./img"
 output_path = "./output"
 
 def_h_scale = 1752    # standard scale size for testing
 
-def composite_down(position):
+def composite_down(position, name=None):
     if position <= 0 :
         print(f"Cannot composite down layer {position}.")
         return
 
-    print(f"Compositing down layer {position} -> {position-1}")
     base = layer[position-1]
     overlay = layer[position]
 
     # Composite the overlay onto the base
-    composited = ImgX(base.name, Image.alpha_composite(base.img, overlay.img))
+    composited = ImgX(base.name if name is None else name, Image.alpha_composite(base.img, overlay.img))
 
     # Replace the base layer with the composited result and remove the overlay layer
     layer[position-1] = composited
     del layer[position]
+    return 1, position-1, f"Composited layer {position} down to layer {position-1}"
 
-def show_layer():
-    print("Showing layers:")
-    for each in layer:
-        print(f"\tLayer {layer.index(each)}: {str(each)}")
-        
+
+# int, str
+# int (0 = img action, 1 = layer action), str (message to show)
+# all layer action args[1] must be the target layer.
+def show_layer(target_layer=None, msg=None):
+    print(f"== Step {steps} =====================")
+    for i in range(len(layer)):
+        print(f"\tLayer {i}: {str(layer[i]):<40}", end="")
+        if target_layer is not None and i == int(target_layer):
+            print(f" <-- {msg}", end="")
+        print()
+
+
+
+
 def composite_all():
     while len(layer) > 1:
         composite_down(len(layer)-1)
+    return 1, 0, f"Composited all layers down to layer 0"
 
 def load_img(img_path, name):
     image = ImgX(name, Image.open(img_path).convert("RGBA"))
     layer.append(image)
-    print(f'Loaded layer {layer[-1].name} {layer[-1].img.size}')
+    return 1, len(layer)-1, f'Loaded from {img_path}'
 
 def copy_layer(L: int, name: str):
     image = copy.deepcopy(layer[L])
     if name is None: name = f"{layer[L].name}_copy"
     image.name = name
     layer.append(image)
-    print(f"Copied layer {L} to layer {len(layer)-1}")
+    return 1, len(layer)-1, f'Copied layer {L} to {len(layer)-1} as "{name}"'
 
 
 def parse_fitx(args):
     idx = int(args[1])
     mode = args[2]
-    if mode == "scale":     layer[idx].fit(None, layer[0].img.size, None, scale_only=True)
-    elif mode == "std":     layer[idx].fit(int(args[3]), layer[0].img.size, def_h_scale)
-    elif mode == "crop":    layer[idx].fit(int(args[3]), layer[0].img.size, def_h_scale, crop=True)
+    msg = None
+    if mode == "scale":     msg = layer[idx].fit(None, layer[0].img.size, None, scale_only=True)
+    elif mode == "std":     msg = layer[idx].fit(int(args[3]), layer[0].img.size, def_h_scale)
+    elif mode == "crop":    msg = layer[idx].fit(int(args[3]), layer[0].img.size, def_h_scale, crop=True)
+    return msg
+
+def set_def_h_scale(a):
+    global def_h_scale
+    def_h_scale = int(a[1])
+    return 1, None, f'Set default scale value to {def_h_scale}'
+
+def toggle_show_steps(bool=None):
+    global show_steps
+    if bool is not None:
+        show_steps = bool
+    else:
+        show_steps = not show_steps
+    return 1, None, f'Set show steps to {show_steps}'
 
 commands = {
-    "scal": lambda a: globals().update(def_h_scale=int(a[1])),
+    "scav": lambda a: set_def_h_scale(a),
     "load": lambda a: load_img(a[1], a[2]),
     "alph": lambda a: layer[int(a[1])].alpha(float(a[2])),
     "fitx": lambda a: parse_fitx(a),
@@ -81,13 +109,17 @@ commands = {
     "coma": lambda a: composite_all(),
     "save": lambda a: layer[int(a[1])].save_jpg(f'{output_path}/{file_name}'),
     "show": lambda a: show_layer(),
+    "step": lambda a: toggle_show_steps(a[1].lower() == "true"),
+    "croa": lambda a: layer[int(a[1])].crop_adv(int(a[2]), int(a[3]), int(a[4]), int(a[5])),
+    "cros": lambda a: layer[int(a[1])].crop_simple(int(a[2]), int(a[3]), int(a[4])),
+    "croq": lambda a: layer[int(a[1])].crop_square(),
 }
 
 
 if __name__ == "__main__":
     print(f'from {img_path} to {output_path}')
 
-    workflow_filename = input("Please enter workflow filename (default: wf1.txt): ").strip()
+    workflow_filename = input("Drag and Drop workflow here: ").strip()
     if workflow_filename == "":
         print("No filename entered. Exiting.")
         exit()
@@ -104,17 +136,33 @@ if __name__ == "__main__":
             if (('jpg' in f) or ('png' in f)):
                 
                 layer = []
+                steps = 0
                 file_name = f.split('.')[0]
                 print(f'==  PROCESSING\t{f}  ===============================')
 
-                load_img(img_path + "/" + f, "base_img")
+                load_img(img_path + "/" + f, file_name)
+
+                
 
                 for each in workflow_str:
+                    steps += 1
                     args = each.split()
                     cmd, *_ = args
                     handler = commands.get(cmd)
-                    if handler: handler(args)
-                    else:       print(f"Command '{cmd}' is not supported yet.")
+                    args[0] = args[0].lower()
+                    if handler: 
+                        msg = handler(args)
+                        if show_steps:
+                            action_type = msg[0]
+                            # print(args)
+                            # img action rtn:   int (action type), str (message to show)
+                            # layer action rtn: int (action type), target_layer, str (message to show)
+                            if action_type == 0:    # img action
+                                show_layer(target_layer=args[1] if args[1].isdigit() else None, msg=msg[1])
+                            elif action_type == 1:  # layer action
+                                show_layer(target_layer=msg[1], msg=msg[2])
+                    else:       
+                        print(f"Command '{cmd}' is not supported yet.")
 
 
     print(f'=============================================')
