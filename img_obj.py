@@ -113,9 +113,8 @@ class ImgX:
         return 0, f'Removed Background'
 
     def crop_adv(self, left, top, right, bottom):
-        print(f'Cropping (Advanced) {self.name} to ({left}, {top}, {right}, {bottom})')
         self.img = self.img.crop((left, top, right, bottom))
-        return 0, f'Advanced Cropped \"{self.name}\" to ({left}, {top}, {right}, {bottom})'
+        return 0, f'Advance Cropped to ({left}, {top}, {right}, {bottom})'
 
     def crop_simple(self, align, width, height):
         """
@@ -136,7 +135,7 @@ class ImgX:
         top  = round(row / 2 * max_y)
 
         self.img = self.img.crop((left, top, left + width, top + height))
-        return 0, f'Simple Cropped \"{self.name}\" to align={align}, size=({width}, {height})'
+        return 0, f'Simple Cropped to align={align}, size=({width}, {height})'
 
     def crop_square(self):
         img_w, img_h = self.img.size
@@ -144,7 +143,7 @@ class ImgX:
         left = (img_w - min_dim) // 2
         top = (img_h - min_dim) // 2
         self.img = self.img.crop((left, top, left + min_dim, top + min_dim))
-        return 0, f'Cropped \"{self.name}\" to Square'
+        return 0, f'Cropped to Square'
 
 
     def save_png(self, path, quality=95):
