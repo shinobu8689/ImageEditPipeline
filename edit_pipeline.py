@@ -117,6 +117,10 @@ def toggle_show_steps(bool=None):
         show_steps = not show_steps
     return 1, None, f'Set show steps to {show_steps}'
 
+def wait_sequence():
+    input("Paused. Press Enter to continue...")
+    return 1, None, f''
+
 commands = {
     "scav": lambda a: set_def_h_scale(a),
     "load": lambda a: load_img(a[1], a[2]),
@@ -134,7 +138,8 @@ commands = {
     "croq": lambda a: layer[int(a[1])].crop_square(),
     "tile": lambda a: tile_route(a),
     "resz": lambda a: layer[int(a[1])].resize((int(a[2]), int(a[3]))),
-    "resl": lambda a: layer[int(a[1])].resize_scale(float(a[2])),
+    "resl": lambda a: layer[int(a[1])].rescale(float(a[2])),
+    "wait": lambda a: wait_sequence(),
 }
 
 
