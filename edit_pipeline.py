@@ -1,3 +1,5 @@
+import time
+
 from PIL import Image
 import copy
 from img_obj import ImgX
@@ -76,13 +78,30 @@ def copy_layer(L: int, name: str):
     return 1, len(layer)-1, f'Copied layer {L} to {len(layer)-1} as "{name}"'
 
 
-def parse_fitx(args):
+def fitx_route(args):
     idx = int(args[1])
     mode = args[2]
     msg = None
+
+    shorter_side = min(layer[0].img.size)
+    temp_h_scale = shorter_side if shorter_side < def_h_scale else def_h_scale
+    
     if mode == "scale":     msg = layer[idx].fit(None, layer[0].img.size, None, scale_only=True)
-    elif mode == "std":     msg = layer[idx].fit(int(args[3]), layer[0].img.size, def_h_scale)
-    elif mode == "crop":    msg = layer[idx].fit(int(args[3]), layer[0].img.size, def_h_scale, crop=True)
+    elif mode == "std":     msg = layer[idx].fit(int(args[3]), layer[0].img.size, temp_h_scale)
+    elif mode == "crop":    msg = layer[idx].fit(int(args[3]), layer[0].img.size, temp_h_scale, crop=True)
+    return msg
+
+def tile_route(args):
+    idx = int(args[1])
+    offset_rows = args[2].lower() == "true"
+
+    if len(args) > 4 and args[3] is not None:           # request custom tile size
+        size = (int(args[3]), int(args[4]))
+    else:
+        size = layer[0].img.size                        # base img
+
+    msg = layer[idx].tile(size, offset_rows=offset_rows)
+
     return msg
 
 def set_def_h_scale(a):
@@ -102,7 +121,7 @@ commands = {
     "scav": lambda a: set_def_h_scale(a),
     "load": lambda a: load_img(a[1], a[2]),
     "alph": lambda a: layer[int(a[1])].alpha(float(a[2])),
-    "fitx": lambda a: parse_fitx(a),
+    "fitx": lambda a: fitx_route(a),
     "copy": lambda a: copy_layer(int(a[1]), a[2]),
     "rmbg": lambda a: layer[int(a[1])].rmbg(),
     "comd": lambda a: composite_down(int(a[1])),
@@ -113,6 +132,9 @@ commands = {
     "croa": lambda a: layer[int(a[1])].crop_adv(int(a[2]), int(a[3]), int(a[4]), int(a[5])),
     "cros": lambda a: layer[int(a[1])].crop_simple(int(a[2]), int(a[3]), int(a[4])),
     "croq": lambda a: layer[int(a[1])].crop_square(),
+    "tile": lambda a: tile_route(a),
+    "resz": lambda a: layer[int(a[1])].resize((int(a[2]), int(a[3]))),
+    "resl": lambda a: layer[int(a[1])].resize_scale(float(a[2])),
 }
 
 
@@ -129,7 +151,7 @@ if __name__ == "__main__":
 
     workflow_str = load_text_file(workflow_filename).split("\n")
 
-
+    start_time = time.time()
 
     for (root, dirs, file) in os.walk(img_path):
         for f in file:
@@ -150,7 +172,7 @@ if __name__ == "__main__":
                     cmd, *_ = args
                     handler = commands.get(cmd)
                     args[0] = args[0].lower()
-                    if handler: 
+                    if handler and not args[0].startswith('#'): 
                         msg = handler(args)
                         if show_steps:
                             action_type = msg[0]
@@ -166,6 +188,8 @@ if __name__ == "__main__":
 
 
     print(f'=============================================')
+    end_time = time.time()
+    print(f"Total Execution Time: {end_time - start_time:.2f} seconds")
     input("Press Enter to exit...")
     
 

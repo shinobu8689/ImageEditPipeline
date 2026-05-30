@@ -99,7 +99,7 @@ class ImgX:
 
 
     def rmbg(self):
-        print("⟲ Removing Background... (Might take a while....)")
+        print("⟲ Removing Background... (Might take a while....)", end="")
         session = new_session("birefnet-general")
 
         self.img = remove(
@@ -145,6 +145,51 @@ class ImgX:
         self.img = self.img.crop((left, top, left + min_dim, top + min_dim))
         return 0, f'Cropped to Square'
 
+    def tile(self, size: tuple[int, int], offset_rows: bool = False):
+
+        canvas_w, canvas_h = size
+        img_w, img_h = self.img.size
+    
+        canvas = Image.new(self.img.mode, size)
+    
+        half_w = img_w // 2
+        row = 0
+        y = 0
+    
+        while y < canvas_h:
+            x_start = -half_w if (offset_rows and row % 2 == 1) else 0
+            x = x_start
+    
+            while x < canvas_w:
+                # Work out how much of the tile is actually visible on the canvas.
+                src_x = max(0, -x)          # skip pixels that are left of the canvas
+                src_y = max(0, -y)          # skip pixels that are above the canvas
+                dst_x = max(0, x)
+                dst_y = max(0, y)
+    
+                paste_w = min(img_w - src_x, canvas_w - dst_x)
+                paste_h = min(img_h - src_y, canvas_h - dst_y)
+    
+                if paste_w > 0 and paste_h > 0:
+                    region = self.img.crop((src_x, src_y, src_x + paste_w, src_y + paste_h))
+                    canvas.paste(region, (dst_x, dst_y))
+    
+                x += img_w
+    
+            y += img_h
+            row += 1
+    
+        self.img = canvas
+        return 0, f'Tiled to {size} with{"out" if not offset_rows else ""} offset'
+
+    def resize(self, new_size):
+        self.img = self.img.resize(new_size, Image.LANCZOS)
+        return 0, f'Resized to {new_size}'
+    
+    def rescale(self, scale: float):
+        new_size = (int(self.img.size[0] * scale), int(self.img.size[1] * scale))
+        self.img = self.img.resize(new_size, Image.LANCZOS)
+        return 0, f'Resized by a scale of {scale} to {new_size}'
 
     def save_png(self, path, quality=95):
         self.img.save(path + ".png", format="PNG", quality=quality, optimize=True)
