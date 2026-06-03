@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ImageEditPipeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #0d0d0f;
+    --surface:  #141417;
+    --panel:    #1a1a1f;
+    --border:   #2a2a35;
+    --accent:   #c8ff00;
+    --accent2:  #00d4ff;
+    --warn:     #ff6b35;
+    --text:     #e8e8ee;
+    --muted:    #6b6b80;
+    --mono:     'JetBrains Mono', monospace;
+    --sans:     'Syne', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--mono); font-size: 13px; }
+
+  /* ── layout ── */
+  .app { display: grid; grid-template-columns: 280px 1fr 320px; grid-template-rows: 48px 1fr; height: 100vh; }
+
+  /* ── topbar ── */
+  .topbar {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; gap: 16px;
+    padding: 0 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  .topbar .logo { font-family: var(--sans); font-weight: 800; font-size: 15px; letter-spacing: -0.5px; color: var(--accent); }
+  .topbar .logo span { color: var(--muted); }
+  .topbar .sep { width: 1px; height: 20px; background: var(--border); }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 12px; border: 1px solid var(--border);
+    background: transparent; color: var(--text); font-family: var(--mono); font-size: 12px;
+    cursor: pointer; transition: all 0.15s; border-radius: 4px;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 700; }
+  .btn.primary:hover { background: #d4ff1a; }
+  .btn.danger { border-color: var(--warn); color: var(--warn); }
+  .btn.danger:hover { background: var(--warn); color: #fff; }
+  .btn.small { padding: 3px 8px; font-size: 11px; }
+
+  .topbar-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+  /* ── left panel: layers ── */
+  .layers-panel {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .panel-header {
+    padding: 12px 16px 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    font-family: var(--sans); font-weight: 600; font-size: 11px;
+    letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted);
+  }
+  .panel-header .count { color: var(--accent); font-family: var(--mono); }
+
+  .layer-list {
+    flex: 1; overflow-y: auto; padding: 8px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .layer-list::-webkit-scrollbar { width: 4px; }
+  .layer-list::-webkit-scrollbar-track { background: transparent; }
+  .layer-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .layer-card {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+    background: var(--panel);
+    display: flex; gap: 8px; align-items: flex-start;
+  }
+  .layer-card:hover { border-color: var(--muted); }
+  .layer-card.active { border-color: var(--accent); background: #1a1f0a; }
+
+  .layer-thumb {
+    width: 52px; height: 52px; flex-shrink: 0;
+    border-radius: 4px; overflow: hidden;
+    border: 1px solid var(--border);
+    background: repeating-conic-gradient(#1e1e25 0% 25%, #161620 0% 50%) 0 0 / 8px 8px;
+    position: relative;
+  }
+  .layer-thumb img { width: 100%; height: 100%; object-fit: contain; }
+
+  .layer-meta { flex: 1; min-width: 0; }
+  .layer-index { font-size: 10px; color: var(--muted); margin-bottom: 2px; }
+  .layer-name {
+    font-size: 12px; color: var(--text); white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; font-weight: 500;
+  }
+  .layer-size { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .layer-actions { display: flex; gap: 3px; margin-top: 4px; flex-wrap: wrap; }
+
+  /* upload zone */
+  .upload-zone {
+    margin: 8px;
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    padding: 16px 8px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--panel);
+  }
+  .upload-zone:hover, .upload-zone.drag { border-color: var(--accent); color: var(--accent); background: #1a1f0a; }
+  .upload-zone input { display: none; }
+
+  /* ── centre: canvas ── */
+  .canvas-area {
+    background: var(--bg);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .canvas-toolbar {
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex; gap: 8px; align-items: center;
+    background: var(--surface);
+    flex-wrap: wrap;
+  }
+  .canvas-toolbar .label {
+    font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase;
+    font-family: var(--sans); font-weight: 600;
+    margin-right: 4px;
+  }
+
+  .canvas-wrap {
+    flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center;
+    padding: 32px;
+  }
+  .canvas-wrap::-webkit-scrollbar { width: 6px; height: 6px; }
+  .canvas-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  #preview-img {
+    max-width: 100%; max-height: 100%;
+    object-fit: contain;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: repeating-conic-gradient(#1a1a22 0% 25%, #141418 0% 50%) 0 0 / 12px 12px;
+    image-rendering: pixelated;
+    transition: opacity 0.2s;
+  }
+  .empty-state {
+    text-align: center; color: var(--muted);
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+  }
+  .empty-state .big { font-size: 48px; }
+  .empty-state p { font-size: 12px; line-height: 1.6; }
+
+  /* ── right panel: commands ── */
+  .cmd-panel {
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+
+  .tabs {
+    display: flex; border-bottom: 1px solid var(--border);
+  }
+  .tab {
+    flex: 1; padding: 10px 4px; text-align: center;
+    font-size: 11px; letter-spacing: 0.8px; text-transform: uppercase;
+    font-family: var(--sans); font-weight: 600; color: var(--muted);
+    cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s;
+    margin-bottom: -1px;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .tab-content { display: none; flex: 1; overflow: hidden; flex-direction: column; }
+  .tab-content.active { display: flex; }
+
+  /* cmd tab */
+  .cmd-input-row {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex; gap: 6px;
+  }
+  .cmd-input {
+    flex: 1; background: var(--panel); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--mono); font-size: 12px;
+    padding: 6px 10px; border-radius: 4px; outline: none;
+  }
+  .cmd-input:focus { border-color: var(--accent); }
+  .cmd-input::placeholder { color: var(--muted); }
+
+  .cmd-log {
+    flex: 1; overflow-y: auto; padding: 8px 12px;
+    display: flex; flex-direction: column; gap: 3px;
+    font-size: 11px;
+  }
+  .cmd-log::-webkit-scrollbar { width: 4px; }
+  .cmd-log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .log-entry { padding: 4px 6px; border-radius: 3px; line-height: 1.5; }
+  .log-entry.ok   { color: var(--accent); background: #1a1f0a; }
+  .log-entry.err  { color: var(--warn); background: #1f150d; }
+  .log-entry.info { color: var(--muted); }
+
+  /* workflow tab */
+  .workflow-area {
+    flex: 1; display: flex; flex-direction: column; padding: 10px 12px; gap: 8px; overflow: hidden;
+  }
+  .workflow-textarea {
+    flex: 1; background: var(--panel); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--mono); font-size: 12px;
+    padding: 10px; border-radius: 4px; outline: none; resize: none;
+    line-height: 1.7;
+  }
+  .workflow-textarea:focus { border-color: var(--accent2); }
+  .workflow-log {
+    height: 120px; overflow-y: auto; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px;
+    font-size: 11px; line-height: 1.6;
+  }
+  .workflow-log::-webkit-scrollbar { width: 4px; }
+  .workflow-log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* manual edit tab */
+  .manual-area {
+    flex: 1; overflow-y: auto; padding: 10px 12px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .manual-area::-webkit-scrollbar { width: 4px; }
+  .manual-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .edit-section { }
+  .edit-section-title {
+    font-family: var(--sans); font-weight: 600; font-size: 10px;
+    letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted);
+    margin-bottom: 8px; padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .field-row {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+  }
+  .field-row label { color: var(--muted); font-size: 11px; width: 64px; flex-shrink: 0; }
+  .field-input {
+    flex: 1; background: var(--panel); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--mono); font-size: 12px;
+    padding: 5px 8px; border-radius: 4px; outline: none;
+  }
+  .field-input:focus { border-color: var(--accent); }
+  select.field-input option { background: var(--panel); }
+
+  .slider-row {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+  }
+  .slider-row label { color: var(--muted); font-size: 11px; width: 64px; flex-shrink: 0; }
+  input[type=range] {
+    flex: 1; accent-color: var(--accent); height: 3px;
+  }
+  .slider-val { width: 36px; text-align: right; color: var(--text); font-size: 11px; }
+
+  /* numpad */
+  .numpad {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px;
+    width: 96px;
+  }
+  .numpad button {
+    aspect-ratio: 1; background: var(--panel); border: 1px solid var(--border);
+    color: var(--muted); font-family: var(--mono); font-size: 11px;
+    cursor: pointer; border-radius: 3px; transition: all 0.1s;
+  }
+  .numpad button:hover { border-color: var(--accent); color: var(--accent); }
+  .numpad button.selected { background: var(--accent); color: #000; border-color: var(--accent); }
+
+  /* status bar */
+  .statusbar {
+    grid-column: 1 / -1;
+    /* not used but reserved */
+    display: none;
+  }
+
+  /* modal */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7); z-index: 100;
+    align-items: center; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 24px; width: 340px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .modal h3 { font-family: var(--sans); font-size: 14px; font-weight: 700; }
+  .modal input {
+    background: var(--panel); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--mono); font-size: 13px;
+    padding: 8px 10px; border-radius: 4px; outline: none; width: 100%;
+  }
+  .modal input:focus { border-color: var(--accent); }
+  .modal-btns { display: flex; justify-content: flex-end; gap: 8px; }
+
+  /* toast */
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--accent); color: #000; font-family: var(--mono); font-size: 12px; font-weight: 700;
+    padding: 8px 20px; border-radius: 20px;
+    opacity: 0; transition: opacity 0.2s;
+    pointer-events: none; z-index: 200;
+  }
+  #toast.show { opacity: 1; }
+
+  /* spinner */
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ref section */
+  .ref-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+  .ref-item {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
+    padding: 5px 7px; font-size: 10px; cursor: pointer;
+    transition: all 0.12s;
+  }
+  .ref-item:hover { border-color: var(--accent2); color: var(--accent2); }
+  .ref-item code { color: var(--accent); font-weight: 700; font-size: 10px; }
+  .ref-item span { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="logo">ImageEdit<span>Pipeline</span></div>
+    <div class="sep"></div>
+    <button class="btn" onclick="clearAll()">⊘ Clear All</button>
+    <div class="topbar-right">
+      <span id="status-text" style="color:var(--muted);font-size:11px;"></span>
+    </div>
+  </header>
+
+  <!-- LAYERS PANEL -->
+  <aside class="layers-panel">
+    <div class="panel-header">
+      Layers
+      <span class="count" id="layer-count">0</span>
+    </div>
+    <div class="layer-list" id="layer-list"></div>
+    <label class="upload-zone" id="upload-zone" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+      <input type="file" id="file-input" accept="image/*" multiple onchange="onFileChange(event)">
+      <div style="font-size:22px;margin-bottom:4px;">↑</div>
+      <div>Drop images or click to upload</div>
+    </label>
+  </aside>
+
+  <!-- CANVAS -->
+  <main class="canvas-area">
+    <div class="canvas-toolbar">
+      <span class="label">View</span>
+      <button class="btn small" onclick="refreshLayers()">⟳ Refresh</button>
+      <button class="btn small" onclick="viewComposite()">⊞ Composite</button>
+      <div style="flex:1"></div>
+      <span id="img-info" style="color:var(--muted);font-size:11px;"></span>
+      <button class="btn small" onclick="saveActive('png')">↓ PNG</button>
+      <button class="btn small" onclick="saveActive('jpg')">↓ JPG</button>
+    </div>
+    <div class="canvas-wrap" id="canvas-wrap">
+      <div class="empty-state" id="empty-state">
+        <div class="big">⬡</div>
+        <p>Upload an image to begin.<br>Use the Layers panel on the left.</p>
+      </div>
+      <img id="preview-img" style="display:none;" alt="preview">
+    </div>
+  </main>
+
+  <!-- CMD PANEL -->
+  <aside class="cmd-panel">
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('cmd')">Command</div>
+      <div class="tab" onclick="switchTab('workflow')">Workflow</div>
+      <div class="tab" onclick="switchTab('manual')">Manual</div>
+      <div class="tab" onclick="switchTab('ref')">Ref</div>
+    </div>
+
+    <!-- CMD tab -->
+    <div class="tab-content active" id="tab-cmd">
+      <div class="cmd-input-row">
+        <input class="cmd-input" id="cmd-input" placeholder="e.g. alph 0 0.5" onkeydown="onCmdKey(event)">
+        <button class="btn primary" onclick="runCmd()">▶</button>
+      </div>
+      <div class="cmd-log" id="cmd-log">
+        <div class="log-entry info">Ready. Enter a command above.</div>
+      </div>
+    </div>
+
+    <!-- WORKFLOW tab -->
+    <div class="tab-content" id="tab-workflow">
+      <div class="workflow-area">
+        <textarea class="workflow-textarea" id="workflow-input" placeholder="# Paste or type your workflow DSL here
+# Lines starting with # are comments
+
+alph 0 0.8
+fitx 0 std 5
+coma"></textarea>
+        <div style="display:flex;gap:6px;">
+          <button class="btn primary" style="flex:1" onclick="runWorkflow()">▶ Run Workflow</button>
+          <button class="btn" onclick="loadWorkflowFile()">↑ Load File</button>
+          <input type="file" id="workflow-file" accept=".txt" style="display:none" onchange="onWorkflowFile(event)">
+        </div>
+        <div class="workflow-log" id="workflow-log" style="color:var(--muted);font-size:11px;">Workflow log will appear here...</div>
+      </div>
+    </div>
+
+    <!-- MANUAL tab -->
+    <div class="tab-content" id="tab-manual">
+      <div class="manual-area">
+
+        <div class="field-row" style="margin-bottom:0">
+          <label>Layer</label>
+          <select class="field-input" id="m-layer-sel" style="flex:1"></select>
+        </div>
+
+        <!-- Opacity -->
+        <div class="edit-section">
+          <div class="edit-section-title">Opacity</div>
+          <div class="slider-row">
+            <label>Alpha</label>
+            <input type="range" min="0" max="1" step="0.01" value="1" id="m-alpha" oninput="this.nextElementSibling.textContent=parseFloat(this.value).toFixed(2)">
+            <span class="slider-val">1.00</span>
+          </div>
+          <button class="btn small" onclick="manualAlpha()">Apply</button>
+        </div>
+
+        <!-- Resize -->
+        <div class="edit-section">
+          <div class="edit-section-title">Resize</div>
+          <div class="field-row"><label>Width</label><input class="field-input" id="m-rw" type="number" placeholder="px"></div>
+          <div class="field-row"><label>Height</label><input class="field-input" id="m-rh" type="number" placeholder="px"></div>
+          <div class="slider-row">
+            <label>Scale</label>
+            <input type="range" min="0.1" max="4" step="0.05" value="1" id="m-scale" oninput="this.nextElementSibling.textContent=parseFloat(this.value).toFixed(2)+'×'">
+            <span class="slider-val">1.00×</span>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn small" onclick="manualResize()">Resize px</button>
+            <button class="btn small" onclick="manualRescale()">Rescale ×</button>
+          </div>
+        </div>
+
+        <!-- Crop -->
+        <div class="edit-section">
+          <div class="edit-section-title">Crop</div>
+          <div class="field-row"><label>Left</label><input class="field-input" id="m-cl" type="number" value="0"></div>
+          <div class="field-row"><label>Top</label><input class="field-input" id="m-ct" type="number" value="0"></div>
+          <div class="field-row"><label>Right</label><input class="field-input" id="m-cr" type="number" value="0"></div>
+          <div class="field-row"><label>Bottom</label><input class="field-input" id="m-cb" type="number" value="0"></div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn small" onclick="manualCrop()">Crop Adv</button>
+            <button class="btn small" onclick="manualCropSquare()">Crop Square</button>
+          </div>
+        </div>
+
+        <!-- Rotate -->
+        <div class="edit-section">
+          <div class="edit-section-title">Rotate</div>
+          <div class="slider-row">
+            <label>Degrees</label>
+            <input type="range" min="-180" max="180" step="1" value="0" id="m-rot" oninput="this.nextElementSibling.textContent=this.value+'°'">
+            <span class="slider-val">0°</span>
+          </div>
+          <button class="btn small" onclick="manualRotate()">Apply</button>
+        </div>
+
+        <!-- Noise -->
+        <div class="edit-section">
+          <div class="edit-section-title">Noise</div>
+          <div class="slider-row">
+            <label>Strength</label>
+            <input type="range" min="0" max="1" step="0.01" value="0.1" id="m-noise-str" oninput="this.nextElementSibling.textContent=parseFloat(this.value).toFixed(2)">
+            <span class="slider-val">0.10</span>
+          </div>
+          <div class="field-row">
+            <label>Type</label>
+            <select class="field-input" id="m-noise-type">
+              <option>gaussian</option>
+              <option>uniform</option>
+              <option>salt_pepper</option>
+            </select>
+          </div>
+          <button class="btn small" onclick="manualNoise()">Apply Noise</button>
+        </div>
+
+        <!-- Move -->
+        <div class="edit-section">
+          <div class="edit-section-title">Move (px)</div>
+          <div class="field-row"><label>X offset</label><input class="field-input" id="m-mx" type="number" value="0"></div>
+          <div class="field-row"><label>Y offset</label><input class="field-input" id="m-my" type="number" value="0"></div>
+          <button class="btn small" onclick="manualMove()">Apply Move</button>
+        </div>
+
+        <!-- Fit -->
+        <div class="edit-section">
+          <div class="edit-section-title">Fit</div>
+          <div class="field-row">
+            <label>Mode</label>
+            <select class="field-input" id="m-fit-mode">
+              <option value="scale">scale</option>
+              <option value="std">std</option>
+              <option value="crop">crop</option>
+            </select>
+          </div>
+          <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px;">
+            <label style="color:var(--muted);font-size:11px;width:64px;flex-shrink:0;margin-top:3px;">Position</label>
+            <div class="numpad" id="fit-numpad">
+              <!-- rendered by JS in numpad order: 7 8 9 / 4 5 6 / 1 2 3 -->
+            </div>
+          </div>
+          <button class="btn small" onclick="manualFit()">Apply Fit</button>
+        </div>
+
+        <!-- Text -->
+        <div class="edit-section">
+          <div class="edit-section-title">Add Text</div>
+          <div class="field-row"><label>Text</label><input class="field-input" id="m-text" type="text" placeholder="Watermark..."></div>
+          <div class="field-row"><label>X</label><input class="field-input" id="m-tx" type="number" value="10"></div>
+          <div class="field-row"><label>Y</label><input class="field-input" id="m-ty" type="number" value="10"></div>
+          <div class="slider-row">
+            <label>Size</label>
+            <input type="range" min="8" max="256" step="1" value="32" id="m-tsize" oninput="this.nextElementSibling.textContent=this.value+'px'">
+            <span class="slider-val">32px</span>
+          </div>
+          <button class="btn small" onclick="manualText()">Add Text</button>
+        </div>
+
+        <!-- Layer ops -->
+        <div class="edit-section">
+          <div class="edit-section-title">Layer Ops</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn small" onclick="manualCopyLayer()">Copy Layer</button>
+            <button class="btn small" onclick="manualComposite()">Comp Down</button>
+            <button class="btn small" onclick="manualCompositeAll()">Comp All</button>
+            <button class="btn small danger" onclick="manualDelete()">Delete</button>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:6px;align-items:center;">
+            <label style="color:var(--muted);font-size:11px;">Move to</label>
+            <input class="field-input" id="m-move-dst" type="number" min="0" placeholder="idx" style="width:60px;">
+            <button class="btn small" onclick="manualMoveLayer()">Move</button>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:6px;align-items:center;">
+            <label style="color:var(--muted);font-size:11px;">Rename</label>
+            <input class="field-input" id="m-rename" type="text" placeholder="new name" style="flex:1">
+            <button class="btn small" onclick="manualRename()">Rename</button>
+          </div>
+        </div>
+
+        <!-- Remove BG -->
+        <div class="edit-section">
+          <div class="edit-section-title">Background Removal</div>
+          <p style="color:var(--muted);font-size:10px;line-height:1.6;margin-bottom:6px;">Uses BiRefNet model. May take a while on first run.</p>
+          <button class="btn small" onclick="manualRmbg()">Remove BG</button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- REF tab -->
+    <div class="tab-content" id="tab-ref">
+      <div style="flex:1;overflow-y:auto;padding:10px 12px;">
+        <div style="color:var(--muted);font-size:10px;margin-bottom:10px;line-height:1.6;">
+          Click a command to copy it to the command input.
+        </div>
+        <div class="ref-grid" id="ref-grid"></div>
+      </div>
+    </div>
+
+  </aside>
+</div>
+
+<!-- Rename modal -->
+<div class="modal-overlay" id="rename-modal">
+  <div class="modal">
+    <h3>Rename Layer</h3>
+    <input type="text" id="rename-input" placeholder="Layer name">
+    <div class="modal-btns">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" onclick="confirmRename()">Rename</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const API = '';
+let activeLayers = [];
+let activeLayerIdx = 0;
+let renameTargetIdx = null;
+
+// ── ref data ──────────────────────────────────────────────────────────────────
+const REF = [
+  { cmd: 'alph', sig: 'L opacity', desc: 'Set layer opacity (0–1)' },
+  { cmd: 'fitx', sig: 'L scale', desc: 'Fit: scale mode' },
+  { cmd: 'fitx', sig: 'L std angle', desc: 'Fit: standard mode' },
+  { cmd: 'fitx', sig: 'L crop angle', desc: 'Fit: crop mode' },
+  { cmd: 'copy', sig: 'L [name]', desc: 'Duplicate a layer' },
+  { cmd: 'rmbg', sig: 'L', desc: 'Remove background' },
+  { cmd: 'comd', sig: 'L', desc: 'Composite layer down' },
+  { cmd: 'coma', sig: '', desc: 'Composite all layers' },
+  { cmd: 'croa', sig: 'L l t r b', desc: 'Crop advanced' },
+  { cmd: 'cros', sig: 'L align w h', desc: 'Crop simple (numpad)' },
+  { cmd: 'croq', sig: 'L', desc: 'Crop to square' },
+  { cmd: 'tile', sig: 'L offset [w h]', desc: 'Tile layer' },
+  { cmd: 'resz', sig: 'L w h', desc: 'Resize to px' },
+  { cmd: 'resl', sig: 'L scale', desc: 'Rescale by factor' },
+  { cmd: 'nois', sig: 'L str [type]', desc: 'Add noise' },
+  { cmd: 'movx', sig: 'L x y', desc: 'Move layer offset' },
+  { cmd: 'jitt', sig: 'L r', desc: 'Random jitter shift' },
+  { cmd: 'text', sig: 'L x y txt sz', desc: 'Add text' },
+  { cmd: 'rota', sig: 'L deg', desc: 'Rotate layer' },
+  { cmd: 'newx', sig: 'name [w h]', desc: 'New blank layer' },
+  { cmd: 'movl', sig: 'src dst', desc: 'Move layer position' },
+  { cmd: 'dell', sig: 'L', desc: 'Delete layer' },
+  { cmd: 'scav', sig: 'px', desc: 'Set default scale' },
+];
+
+function buildRef() {
+  const grid = document.getElementById('ref-grid');
+  grid.innerHTML = REF.map(r => `
+    <div class="ref-item" onclick="insertCmd('${r.cmd} ${r.sig.split(' ')[0] === 'L' ? activeLayerIdx : ''} '.trim())">
+      <code>${r.cmd}</code> <span>${r.sig}</span><br>
+      <span style="color:var(--muted)">${r.desc}</span>
+    </div>`).join('');
+}
+
+function insertCmd(cmd) {
+  document.getElementById('cmd-input').value = cmd.trim();
+  switchTab('cmd');
+  document.getElementById('cmd-input').focus();
+}
+
+// ── toast ─────────────────────────────────────────────────────────────────────
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2000);
+}
+
+// ── api helpers ───────────────────────────────────────────────────────────────
+async function api(method, path, body) {
+  const opts = { method, headers: {} };
+  if (body && !(body instanceof FormData)) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  } else if (body) {
+    opts.body = body;
+  }
+  const res = await fetch(API + path, opts);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || res.statusText);
+  }
+  return res.json();
+}
+
+// ── layer rendering ───────────────────────────────────────────────────────────
+function renderLayers(layers) {
+  activeLayers = layers;
+  document.getElementById('layer-count').textContent = layers.length;
+  const list = document.getElementById('layer-list');
+  list.innerHTML = '';
+
+  // Rebuild layer select in manual tab
+  const sel = document.getElementById('m-layer-sel');
+  sel.innerHTML = layers.map((l, i) => `<option value="${i}">${i}: ${l.name}</option>`).join('');
+
+  if (layers.length === 0) {
+    showEmpty();
+    return;
+  }
+
+  layers.forEach((lyr, i) => {
+    const card = document.createElement('div');
+    card.className = 'layer-card' + (i === activeLayerIdx ? ' active' : '');
+    card.innerHTML = `
+      <div class="layer-thumb"><img src="${lyr.preview}" alt="${lyr.name}"></div>
+      <div class="layer-meta">
+        <div class="layer-index">Layer ${i}</div>
+        <div class="layer-name" title="${lyr.name}">${lyr.name}</div>
+        <div class="layer-size">${lyr.size[0]} × ${lyr.size[1]}</div>
+        <div class="layer-actions">
+          <button class="btn small" onclick="selectLayer(${i});event.stopPropagation()">View</button>
+          <button class="btn small" onclick="openRenameModal(${i});event.stopPropagation()">Ren</button>
+          <button class="btn small danger" onclick="deleteLayer(${i});event.stopPropagation()">✕</button>
+        </div>
+      </div>`;
+    card.onclick = () => selectLayer(i);
+    list.appendChild(card);
+  });
+
+  // auto-show active
+  showLayer(activeLayerIdx);
+}
+
+function showLayer(idx) {
+  if (!activeLayers[idx]) { showEmpty(); return; }
+  const lyr = activeLayers[idx];
+  const img = document.getElementById('preview-img');
+  const empty = document.getElementById('empty-state');
+  img.style.display = 'block';
+  empty.style.display = 'none';
+  img.src = lyr.preview;
+  document.getElementById('img-info').textContent = `L${idx}: ${lyr.name}  ${lyr.size[0]}×${lyr.size[1]}`;
+}
+
+function showEmpty() {
+  document.getElementById('preview-img').style.display = 'none';
+  document.getElementById('empty-state').style.display = 'flex';
+  document.getElementById('img-info').textContent = '';
+}
+
+function selectLayer(idx) {
+  activeLayerIdx = idx;
+  document.getElementById('m-layer-sel').value = idx;
+  renderLayers(activeLayers);
+}
+
+// ── upload ────────────────────────────────────────────────────────────────────
+async function uploadFiles(files) {
+  for (const file of files) {
+    setStatus('Uploading ' + file.name + '…');
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const data = await api('POST', '/upload', fd);
+      renderLayers(data.layers);
+      activeLayerIdx = data.layers.length - 1;
+      renderLayers(data.layers);
+      toast('Loaded ' + file.name);
+    } catch (e) { logCmd('err', 'Upload failed: ' + e.message); }
+  }
+  setStatus('');
+}
+
+function onFileChange(e) { uploadFiles(e.target.files); e.target.value = ''; }
+function onDragOver(e)  { e.preventDefault(); document.getElementById('upload-zone').classList.add('drag'); }
+function onDragLeave()  { document.getElementById('upload-zone').classList.remove('drag'); }
+function onDrop(e)      { e.preventDefault(); onDragLeave(); uploadFiles(e.dataTransfer.files); }
+
+// ── commands ──────────────────────────────────────────────────────────────────
+async function runCmd() {
+  const input = document.getElementById('cmd-input');
+  const cmd = input.value.trim();
+  if (!cmd) return;
+  logCmd('info', '▶ ' + cmd);
+  setStatus('Running…');
+  try {
+    const data = await api('POST', '/command', { command: cmd });
+    renderLayers(data.layers);
+    logCmd('ok', data.message || 'Done');
+    input.value = '';
+  } catch (e) {
+    logCmd('err', e.message);
+  }
+  setStatus('');
+}
+
+function onCmdKey(e) { if (e.key === 'Enter') runCmd(); }
+
+function logCmd(type, msg) {
+  const log = document.getElementById('cmd-log');
+  const div = document.createElement('div');
+  div.className = 'log-entry ' + type;
+  div.textContent = msg;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+// ── workflow ──────────────────────────────────────────────────────────────────
+async function runWorkflow() {
+  const wf = document.getElementById('workflow-input').value;
+  if (!wf.trim()) return;
+  setStatus('Running workflow…');
+  try {
+    const data = await api('POST', '/workflow', { workflow: wf });
+    renderLayers(data.layers);
+    const wlog = document.getElementById('workflow-log');
+    wlog.innerHTML = data.log.map(l => {
+      const cls = l.startsWith('✓') ? 'color:var(--accent)' : l.startsWith('✗') ? 'color:var(--warn)' : '';
+      return `<div style="${cls}">${escHtml(l)}</div>`;
+    }).join('');
+    wlog.scrollTop = wlog.scrollHeight;
+    toast('Workflow complete');
+  } catch (e) { logCmd('err', e.message); }
+  setStatus('');
+}
+
+function loadWorkflowFile() { document.getElementById('workflow-file').click(); }
+function onWorkflowFile(e) {
+  const f = e.target.files[0]; if (!f) return;
+  const reader = new FileReader();
+  reader.onload = ev => { document.getElementById('workflow-input').value = ev.target.result; };
+  reader.readAsText(f);
+  e.target.value = '';
+}
+
+// ── refresh / composite view ──────────────────────────────────────────────────
+async function refreshLayers() {
+  try {
+    const data = await api('GET', '/layers');
+    renderLayers(data.layers);
+  } catch (e) { logCmd('err', e.message); }
+}
+
+async function viewComposite() {
+  // Fetch a merged preview without touching actual state: just show layer 0 for now
+  if (activeLayers.length === 0) return;
+  showLayer(0);
+  toast('Showing Layer 0 (composite base)');
+}
+
+// ── save ──────────────────────────────────────────────────────────────────────
+async function saveActive(fmt) {
+  const idx = parseInt(document.getElementById('m-layer-sel').value) || activeLayerIdx;
+  try {
+    const data = await api('POST', `/layer/${idx}/save?fmt=${fmt}`);
+    const a = document.createElement('a');
+    a.href = data.data;
+    a.download = data.filename;
+    a.click();
+    toast('Saved ' + data.filename);
+  } catch (e) { logCmd('err', e.message); }
+}
+
+// ── clear ─────────────────────────────────────────────────────────────────────
+async function clearAll() {
+  if (!confirm('Clear all layers?')) return;
+  await api('DELETE', '/layers');
+  activeLayers = [];
+  activeLayerIdx = 0;
+  renderLayers([]);
+  document.getElementById('cmd-log').innerHTML = '<div class="log-entry info">Cleared.</div>';
+}
+
+async function deleteLayer(idx) {
+  try {
+    const data = await api('POST', '/command', { command: `dell ${idx}` });
+    activeLayerIdx = Math.min(activeLayerIdx, data.layers.length - 1);
+    renderLayers(data.layers);
+    toast('Layer deleted');
+  } catch (e) { logCmd('err', e.message); }
+}
+
+// ── manual helpers ────────────────────────────────────────────────────────────
+function getML() { return parseInt(document.getElementById('m-layer-sel').value) || 0; }
+
+async function send(cmd) {
+  setStatus('Processing…');
+  try {
+    const data = await api('POST', '/command', { command: cmd });
+    renderLayers(data.layers);
+    selectLayer(getML());
+    logCmd('ok', '✓ ' + cmd + '  →  ' + data.message);
+    toast(data.message);
+  } catch (e) { logCmd('err', cmd + ' failed: ' + e.message); }
+  setStatus('');
+}
+
+function manualAlpha()      { send(`alph ${getML()} ${document.getElementById('m-alpha').value}`); }
+function manualResize()     { send(`resz ${getML()} ${document.getElementById('m-rw').value} ${document.getElementById('m-rh').value}`); }
+function manualRescale()    { send(`resl ${getML()} ${document.getElementById('m-scale').value}`); }
+function manualCrop()       { send(`croa ${getML()} ${document.getElementById('m-cl').value} ${document.getElementById('m-ct').value} ${document.getElementById('m-cr').value} ${document.getElementById('m-cb').value}`); }
+function manualCropSquare() { send(`croq ${getML()}`); }
+function manualRotate()     { send(`rota ${getML()} ${document.getElementById('m-rot').value}`); }
+function manualNoise()      { send(`nois ${getML()} ${document.getElementById('m-noise-str').value} ${document.getElementById('m-noise-type').value}`); }
+function manualMove()       { send(`movx ${getML()} ${document.getElementById('m-mx').value} ${document.getElementById('m-my').value}`); }
+function manualRmbg()       { send(`rmbg ${getML()}`); }
+function manualCopyLayer()  { send(`copy ${getML()}`); }
+function manualComposite()  { send(`comd ${getML()}`); }
+function manualCompositeAll() { send(`coma`); }
+function manualDelete()     { if (confirm('Delete this layer?')) send(`dell ${getML()}`); }
+function manualText()       { send(`text ${getML()} ${document.getElementById('m-tx').value} ${document.getElementById('m-ty').value} ${document.getElementById('m-text').value || 'text'} ${document.getElementById('m-tsize').value}`); }
+function manualMoveLayer()  { send(`movl ${getML()} ${document.getElementById('m-move-dst').value}`); }
+
+function manualFit() {
+  const mode = document.getElementById('m-fit-mode').value;
+  const sel = document.querySelector('.numpad button.selected');
+  const angle = sel ? sel.dataset.n : '5';
+  if (mode === 'scale') send(`fitx ${getML()} scale`);
+  else send(`fitx ${getML()} ${mode} ${angle}`);
+}
+
+async function manualRename() {
+  const name = document.getElementById('m-rename').value.trim();
+  if (!name) return;
+  try {
+    const data = await api('PATCH', `/layer/${getML()}/rename`, { name });
+    renderLayers(data.layers);
+    toast('Renamed');
+  } catch(e) { logCmd('err', e.message); }
+}
+
+// ── numpad ────────────────────────────────────────────────────────────────────
+function buildNumpad() {
+  const np = document.getElementById('fit-numpad');
+  const order = [7,8,9,4,5,6,1,2,3];
+  np.innerHTML = order.map(n => `<button data-n="${n}" onclick="selectNumpad(this)">${n}</button>`).join('');
+  np.querySelector('[data-n="5"]').classList.add('selected');
+}
+
+function selectNumpad(btn) {
+  document.querySelectorAll('.numpad button').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+}
+
+// ── rename modal ──────────────────────────────────────────────────────────────
+function openRenameModal(idx) {
+  renameTargetIdx = idx;
+  document.getElementById('rename-input').value = activeLayers[idx]?.name || '';
+  document.getElementById('rename-modal').classList.add('open');
+  setTimeout(() => document.getElementById('rename-input').focus(), 50);
+}
+function closeModal() {
+  document.getElementById('rename-modal').classList.remove('open');
+  renameTargetIdx = null;
+}
+async function confirmRename() {
+  const name = document.getElementById('rename-input').value.trim();
+  if (!name || renameTargetIdx === null) { closeModal(); return; }
+  try {
+    const data = await api('PATCH', `/layer/${renameTargetIdx}/rename`, { name });
+    renderLayers(data.layers);
+    toast('Renamed to ' + name);
+  } catch(e) { logCmd('err', e.message); }
+  closeModal();
+}
+document.getElementById('rename-input').addEventListener('keydown', e => { if (e.key === 'Enter') confirmRename(); if (e.key === 'Escape') closeModal(); });
+document.getElementById('rename-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
+
+// ── tabs ──────────────────────────────────────────────────────────────────────
+function switchTab(id) {
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  const tabs = ['cmd','workflow','manual','ref'];
+  const idx = tabs.indexOf(id);
+  document.querySelectorAll('.tab')[idx].classList.add('active');
+  document.getElementById('tab-' + id).classList.add('active');
+}
+
+// ── status ────────────────────────────────────────────────────────────────────
+function setStatus(msg) { document.getElementById('status-text').textContent = msg; }
+
+// ── util ──────────────────────────────────────────────────────────────────────
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── init ──────────────────────────────────────────────────────────────────────
+buildRef();
+buildNumpad();
+refreshLayers();
+</script>
+</body>
+</html>

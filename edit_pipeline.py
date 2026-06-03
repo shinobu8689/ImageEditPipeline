@@ -25,6 +25,7 @@ steps = 0
 show_steps = True
 
 img_path = "./img"
+material_path = "./material"
 output_path = "./output"
 
 def_h_scale = 1752    # standard scale size for testing
