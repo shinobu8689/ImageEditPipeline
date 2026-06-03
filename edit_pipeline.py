@@ -127,6 +127,25 @@ def wait_sequence():
     input("Paused. Press Enter to continue...")
     return 1, None, f''
 
+def new_layer(name: str, size: tuple = None):
+    if size is None:
+        size = layer[0].img.size
+    image = ImgX(name, Image.new("RGBA", size, (0, 0, 0, 0)))
+    layer.append(image)
+    return 1, len(layer)-1, f'Created blank layer "{name}" at {size}'
+
+def move_layer(src: int, dst: int):
+    if src == dst:
+        return 1, dst, f'Layer {src} already at position {dst}'
+    item = layer.pop(src)
+    layer.insert(dst, item)
+    return 1, dst, f'Moved layer {src} to position {dst}'
+
+def delete_layer(idx: int):
+    name = layer[idx].name
+    del layer[idx]
+    return 1, None, f'Deleted layer {idx} ("{name}")'
+
 commands = {
     "scav": lambda a: set_def_h_scale(a),
     "load": lambda a: load_img(a[1], a[2]),
@@ -150,7 +169,10 @@ commands = {
     "movx": lambda a: layer[int(a[1])].movx(int(a[2]), int(a[3])),
     "jitt": lambda a: layer[int(a[1])].jitter_shift(int(a[2])),
     "text": lambda a: layer[int(a[1])].add_text(int(a[2]), int(a[3]), a[4], int(a[5]) if len(a) > 5 else 16, padding=len(a) > 6 and a[6].lower() == "true", font=a[7] if len(a) > 7 else "./Fonts/arial.ttf"),
-    "rota": lambda a: layer[int(a[1])].rotate(float(a[2]))
+    "rota": lambda a: layer[int(a[1])].rotate(float(a[2])),
+    "newx": lambda a: new_layer(a[1], (int(a[2]), int(a[3])) if len(a) > 3 else None),
+    "movl": lambda a: move_layer(int(a[1]), int(a[2])),
+    "dell": lambda a: delete_layer(int(a[1]))
 }
 
 
@@ -207,9 +229,3 @@ if __name__ == "__main__":
     end_time = time.time()
     print(f"Total Execution Time: {end_time - start_time:.2f} seconds")
     input("Press Enter to exit...")
-    
-
-
-
-
-
