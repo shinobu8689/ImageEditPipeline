@@ -28,6 +28,7 @@ img_path = "./img"
 output_path = "./output"
 
 def_h_scale = 1752    # standard scale size for testing
+scav_flag = False     # flag to indicate if scav has been set, used to determine if fitx should use scav value as default scale
 
 def composite_down(position, name=None):
     if position <= 0 :
@@ -83,9 +84,12 @@ def fitx_route(args):
     mode = args[2]
     msg = None
 
-    shorter_side = min(layer[0].img.size)
-    temp_h_scale = shorter_side if shorter_side < def_h_scale else def_h_scale
-    
+    if not scav_flag:
+        shorter_side = min(layer[0].img.size)
+        temp_h_scale = shorter_side if shorter_side < def_h_scale else def_h_scale
+    else:
+        temp_h_scale = def_h_scale
+
     if mode == "scale":     msg = layer[idx].fit(None, layer[0].img.size, None, scale_only=True)
     elif mode == "std":     msg = layer[idx].fit(int(args[3]), layer[0].img.size, temp_h_scale)
     elif mode == "crop":    msg = layer[idx].fit(int(args[3]), layer[0].img.size, temp_h_scale, crop=True)
@@ -107,6 +111,8 @@ def tile_route(args):
 def set_def_h_scale(a):
     global def_h_scale
     def_h_scale = int(a[1])
+    global scav_flag
+    scav_flag = True
     return 1, None, f'Set default scale value to {def_h_scale}'
 
 def toggle_show_steps(bool=None):
@@ -140,6 +146,11 @@ commands = {
     "resz": lambda a: layer[int(a[1])].resize((int(a[2]), int(a[3]))),
     "resl": lambda a: layer[int(a[1])].rescale(float(a[2])),
     "wait": lambda a: wait_sequence(),
+    "nois": lambda a: layer[int(a[1])].add_noise(float(a[2]), a[3] if len(a) > 3 else 'gaussian'),
+    "movx": lambda a: layer[int(a[1])].movx(int(a[2]), int(a[3])),
+    "jitt": lambda a: layer[int(a[1])].jitter_shift(int(a[2])),
+    "text": lambda a: layer[int(a[1])].add_text(int(a[2]), int(a[3]), a[4], int(a[5]) if len(a) > 5 else 16, padding=len(a) > 6 and a[6].lower() == "true", font=a[7] if len(a) > 7 else "./Fonts/arial.ttf"),
+    "rota": lambda a: layer[int(a[1])].rotate(float(a[2]))
 }
 
 
