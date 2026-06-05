@@ -282,3 +282,66 @@ async def rename_layer(idx: int, req: RenameRequest):
         raise HTTPException(status_code=404, detail="Layer not found")
     layer[idx].name = req.name
     return {"layers": all_layers_info()}
+
+
+# ── filesystem browsing ────────────────────────────────────────────────────────
+
+IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif"}
+
+WATCHED_FOLDERS = {
+    "img":      BASE_DIR / "img",
+    "material": BASE_DIR / "material",
+    "output":   BASE_DIR / "output",
+}
+
+
+@app.get("/fs/list")
+async def fs_list():
+    """Return the contents of img/, material/, output/ as a tree."""
+    result = {}
+    for label, folder in WATCHED_FOLDERS.items():
+        folder.mkdir(parents=True, exist_ok=True)
+        files = []
+        for f in sorted(folder.iterdir()):
+            if f.is_file() and f.suffix.lower() in IMG_EXTS:
+                files.append({
+                    "name": f.name,
+                    "path": str(f.relative_to(BASE_DIR)).replace("\\", "/"),
+                    "size": f.stat().st_size,
+                })
+        result[label] = files
+    return result
+
+
+class LoadFileRequest(BaseModel):
+    path: str   # relative path from BASE_DIR, e.g. "img/foo.jpg"
+    name: Optional[str] = None
+
+
+@app.get("/fs/thumb")
+async def fs_thumb(path: str):
+    """Return a small base64 thumbnail for a file-browser preview."""
+    from fastapi.responses import Response
+    target = (BASE_DIR / path).resolve()
+    if not str(target).startswith(str(BASE_DIR)) or not target.exists():
+        raise HTTPException(status_code=404, detail="Not found")
+    img = Image.open(target).convert("RGBA")
+    img.thumbnail((64, 64), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return Response(content=buf.getvalue(), media_type="image/png")
+
+
+@app.post("/fs/load")
+async def fs_load(req: LoadFileRequest):
+    """Load an on-disk image onto the layer stack."""
+    target = (BASE_DIR / req.path).resolve()
+    # Safety: must stay inside BASE_DIR
+    if not str(target).startswith(str(BASE_DIR)):
+        raise HTTPException(status_code=403, detail="Path outside project directory")
+    if not target.exists():
+        raise HTTPException(status_code=404, detail=f"File not found: {req.path}")
+    img = Image.open(target).convert("RGBA")
+    name = req.name or target.stem
+    layer.append(ImgX(name, img))
+    return {"layers": all_layers_info(), "message": f"Loaded {target.name} as layer {len(layer)-1}"}
